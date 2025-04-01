@@ -1,0 +1,62 @@
+    # Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+dist/
+build/
+.eggs/
+*.egg-info/
+pip-log.txt
+pip-delete-this-directory.txt
+.DS_Store
+
+# Virtual environments
+venv/
+.env
+.env.local
+.env.*.local
+*.env
+
+# Jupyter Notebooks
+.ipynb_checkpoints
+
+# pytest
+.cache
+
+# mypy
+.mypy_cache/
+
+# ignore plots
+plots/
+
+# Ignore individual file types
+*.ai
+*.csv
+*.txt
+*.gz
+*.xlsx
+*.xls
+*.png
+*.svg
+*.pdf
+*.pickle
+*.json
+*.jsonl
+*.xml
+*.arrow
+*.pkl
+*.out
+*.yaml
+*.zip
+*.npy
+*.pptx
+*.xsl
+*.pm
+*.sqlite
+*.log
+
+# allow specific files
+!annotations/20250125_cytokine_info_with_functional_classification_LV.xlsx
+!annotations/donor_metadata.xlsx
