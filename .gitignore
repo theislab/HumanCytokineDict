@@ -56,7 +56,14 @@ plots/
 *.pm
 *.sqlite
 *.log
+*.pkl
+*.sqlite
+*.png
+*.svg
+*.xlsx
 
 # allow specific files
-!annotations/20250125_cytokine_info_with_functional_classification_LV.xlsx
+!annotations/20250405_cytokine_info_with_functional_classification_LO.xlsx
 !annotations/donor_metadata.xlsx
+!annotations/ribosomal_genes.json
+!spatial_genes.csv
