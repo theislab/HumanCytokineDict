@@ -61,7 +61,7 @@ CELL_TYPE_COLORS = {
     'NKT': 'red',
     'NK CD56hi': 'pink',
     'NK CD56low': 'saddlebrown',
-    'ILC': 'navy',
+    #'ILC': 'navy',
     'pDC': 'deeppink',
     'cDC': 'lime',
     'CD14 Mono': 'purple',

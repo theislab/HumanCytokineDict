@@ -79,7 +79,6 @@ _greek_letters = {
 # Reverse mapping
 _greek_letters_inv = {v: k for k, v in _greek_letters.items()}
 
-
 def replace_greek_letters(text):
     for key, value in _greek_letters.items():
         text = text.replace(key, value)
@@ -95,19 +94,54 @@ def introduce_greek_letters(text):
 
 def apply_greek_labels(ax):
     """
-    Apply Greek letter formatting to both x and y axis tick labels on a given axes.
+    Apply Greek letter formatting to axis tick labels.
+    Numeric labels are preserved or formatted; text labels are processed.
     """
-    def greek_label_formatter(val, pos):
-        label = f"{val:.0f}"  # Format as string
-        return introduce_greek_letters(label)
+    original_x_formatter = ax.xaxis.get_major_formatter()
+    original_y_formatter = ax.yaxis.get_major_formatter()
+
+    def custom_tick_formatter(original_formatter, value, tick_position, is_numeric_axis=False):
+        """
+        Custom formatter that applies Greek letters to text and preserves/formats numbers.
+        """
+        label_string = ""
+        # Ensure the original_formatter is callable before calling it
+        if callable(original_formatter):
+            label_string = original_formatter(value, tick_position)
+        
+        # If the original formatter gave a non-empty string...
+        if label_string:
+            try:
+                # Test if it's a number. If so, return it directly.
+                float(label_string.strip())
+                return label_string
+            except ValueError:
+                # Not a number, apply Greek letter substitution.
+                return introduce_greek_letters(label_string)
+        # If original returned empty, AND it's a numeric axis AND value is a number...
+        elif is_numeric_axis and isinstance(value, (int, float)):
+            # Fallback: Format the number yourself.
+            # Use 'g' for a general format or specify (e.g., '.1f').
+            return f"{value:g}"
+        # Otherwise (text axis with empty original, or non-number), return empty.
+        else:
+            return ""
+
+    # Apply the custom formatter, telling the Y-axis it's likely numeric.
+    # Note: We assume Y is numeric and X might be text/category.
+    # If X can also be purely numeric and disappear, set is_numeric_axis=True for it too.
+    ax.xaxis.set_major_formatter(FuncFormatter(
+        lambda val, pos: custom_tick_formatter(original_x_formatter, val, pos, is_numeric_axis=False)
+    ))
+    ax.yaxis.set_major_formatter(FuncFormatter(
+        lambda val, pos: custom_tick_formatter(original_y_formatter, val, pos, is_numeric_axis=True)
+    ))
+
+    # Redraw the figure to apply formatter changes.
+    if ax.figure and ax.figure.canvas:
+        ax.figure.canvas.draw_idle()
     
-    # Apply formatter to x and y axes
-    ax.xaxis.set_major_formatter(FuncFormatter(greek_label_formatter))
-    ax.yaxis.set_major_formatter(FuncFormatter(greek_label_formatter))
-    
-    # Redraw the figure to ensure updates are visible
-    ax.figure.canvas.draw_idle()
-    
+
 def apply_greek_labels_heatmap(ax):
     """
     Replace Greek letter names with symbols in x and y tick labels for heatmaps.
