@@ -148,10 +148,12 @@ def apply_greek_labels_heatmap(ax):
     """
     # Apply to x-axis labels
     x_labels = [label.get_text() for label in ax.get_xticklabels()]
+    ax.set_xticks(ax.get_xticks())  # Ensure ticks are set
     ax.set_xticklabels([introduce_greek_letters(lbl) for lbl in x_labels], rotation=90)
     
     # Apply to y-axis labels
     y_labels = [label.get_text() for label in ax.get_yticklabels()]
+    ax.set_yticks(ax.get_yticks())  # Ensure ticks are set
     ax.set_yticklabels([introduce_greek_letters(lbl) for lbl in y_labels])
     
     # Ensure the figure updates
