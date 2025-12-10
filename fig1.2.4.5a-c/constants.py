@@ -61,7 +61,7 @@ CELL_TYPE_COLORS = {
     'NKT': 'red',
     'NK CD56hi': 'pink',
     'NK CD56low': 'saddlebrown',
-    'pDC': 'deeppink',
+    #'pDC': 'deeppink',
     'cDC': 'lime',
     'CD14 Mono': 'purple',
     'CD16 Mono': tab10[16],
@@ -80,7 +80,7 @@ CELL_TYPE_COLORS_ALT = {
     'NKT': 'red',
     'NK CD56hi': 'pink',
     'NK CD56low': 'saddlebrown',
-    'pDC': 'deeppink',
+#    'pDC': 'deeppink',
     'cDC': 'lime',
     'CD14 Mono': 'purple',
     'CD16 Mono': tab10[16],
@@ -91,15 +91,11 @@ ALL_CELL_TYPES = list(CELL_TYPE_COLORS.keys())
 ALL_CELL_TYPES_ALT = list(CELL_TYPE_COLORS_ALT.keys())
 
 if __name__ == "__main__":
-    # Create vertical bars for each cell type
     fig, ax = plt.subplots(figsize=(8, 6))
-
-    # Plot vertical bars
     x_positions = range(len(CELL_TYPE_COLORS_ALT))
     for i, (cell_type, color) in enumerate(CELL_TYPE_COLORS_ALT.items()):
         ax.bar(i, 1, color=color, label=cell_type)
 
-    # Customize plot
     ax.set_xticks(x_positions)
     ax.set_xticklabels(CELL_TYPE_COLORS_ALT.keys(), rotation=90)
     ax.set_ylim(0, 1)
@@ -111,12 +107,12 @@ if __name__ == "__main__":
     plt.tight_layout()
     plt.show()
 
-
-    # Create vertical bars for each cell type
+    x_positions = range(len(CELL_TYPE_COLORS))
+    for i, (cell_type, color) in enumerate(CELL_TYPE_COLORS.items()):
+        ax.bar(i, 1, color=color, label=cell_type)
     fig, ax = plt.subplots(figsize=(8, 6))
-
     ax.set_xticks(x_positions)
-    ax.set_xticklabels(CELL_TYPE_COLORS_b.keys(), rotation=90)
+    ax.set_xticklabels(CELL_TYPE_COLORS.keys(), rotation=90)
     ax.set_ylim(0, 1)
     ax.set_yticks([])
     ax.spines['top'].set_visible(False)

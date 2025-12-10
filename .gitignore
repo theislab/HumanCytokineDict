@@ -28,8 +28,9 @@ venv/
 # mypy
 .mypy_cache/
 
-# ignore plots
+# ignore plots and data
 plots/
+data/
 
 # Ignore individual file types
 *.ai

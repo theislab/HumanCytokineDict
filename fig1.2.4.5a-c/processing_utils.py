@@ -82,34 +82,3 @@ def normalize_df_to_rpm(df, along_axis=1):
     
     return df
 
-# def generate_mean_df(df, donor_names):
-#     """Generates the mean and standard deviation across different donors"""
-#     df = pd.concat(df, keys=donor_names, axis=0)
-    
-#     # drop cell type and cytokine columns if they exist
-#     if "cell_type" in df.columns:
-#         df = df.drop(columns=["cell_type"])
-#     if "cytokine" in df.columns:
-#         df = df.drop(columns=["cytokine"])
-    
-#     mean_df = df.groupby(level=1).mean()
-#     std_df = df.groupby(level=1).std()
-    
-#     return mean_df, std_df
-
-# def generate_cytokine_mean_df(aggregate_dfs):
-#     """Generates the mean across different cytokine stimulations for each cell type"""
-#     dfs = []
-    
-#     for df in aggregate_dfs:    
-#         df["cell_type"] = df.index.str.split("_").str[0]
-#         df["cytokine"] = df.index.str.split("_").str[1]
-#         df.drop(columns=["cytokine"], inplace=True)
-        
-#         df = df.groupby(["cell_type"]).mean()
-#         dfs.append(df)
-        
-#     mean_cytokine_df = pd.concat(dfs, keys=donor_names, axis=0)
-#     return mean_cytokine_df
-
-

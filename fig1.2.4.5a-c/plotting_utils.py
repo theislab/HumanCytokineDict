@@ -61,7 +61,6 @@ def plot_overview_labels_along_y_axis(fig, ax, labels, vals_per_label, x_offset,
         curr_x_val = x_offset + stagger * (index % 2)
         
         if not "empty" in label and vals_per_label[label] > 0:
-            # Add text annotations
             ax.text(
                 curr_x_val,
                 y_pos,
@@ -85,7 +84,7 @@ def plot_overview_labels_along_y_axis(fig, ax, labels, vals_per_label, x_offset,
                 color=color,
                 linewidth=linewidth,
                 clip_on=False,
-                zorder=0  # Ensures it doesn't interfere with other plot elements
+                zorder=0
             )
         
         cumulative_vals += vals_per_label[label]
