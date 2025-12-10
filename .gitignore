@@ -62,6 +62,7 @@ data/
 *.png
 *.svg
 *.xlsx
+*.parquet
 
 # allow specific files
 !annotations/20250405_cytokine_info_with_functional_classification_LO.xlsx
