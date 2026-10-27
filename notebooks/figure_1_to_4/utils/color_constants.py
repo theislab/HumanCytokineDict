@@ -4,54 +4,6 @@ tab10 = list(plt.get_cmap('tab10').colors)
 set2 = list(plt.get_cmap('Set2').colors)
 tab10 = tab10 + set2
 
-# from lib.info_dicts import cell_type_colors
-CELL_TYPE_COLORS_orig = {
-    'B cell': tab10[0],
-    'CD4 T cell': tab10[1], 
-    'CD8 T cell': tab10[2],
-    'Treg': tab10[9],
-    'MAIT': tab10[4],
-    'NKT': tab10[5],
-    'NK CD56hi': tab10[6],
-    'NK CD56low': tab10[7],
-    #'ILC': tab10[10],
-    'pDC': tab10[9],
-    'cDC': tab10[8],
-    'CD14 Mono': tab10[3],
-    'CD16 Mono': tab10[16],
-    #'Granulocyte': tab10[12],
-    'HSPC': tab10[14],
-    #'Platelet': tab10[15],
-}
-
-
-CELL_TYPE_COLORS_a = {
-    'CD4 T cell': '#4f5d91ff', 
-    'CD4 Naive':'#5f73beff',
-    'CD4 Memory': '#1f3792ff',
-    'CD8 T cell': '#6b8159ff',
-    'CD8 Naive':'#8ea47bff',
-    'CD8 Memory':'#376313ff',
-    'Treg': '#98b1d0ff',
-    'MAIT': '#45a784ff',
-    'NKT': '#8f6fb5ff',
-    'CD56-bright NK': '#f8967bff',
-    'CD56-dim NK': '#d76552ff',
-    'ILC': '#f0a9b1ff',
-    'B cell': '#b09292ff',
-    'B Naive': '#72554eff' ,
-    'B Intermediate/Memory': '#bb6c6cff',
-    'Plasmablast':'#874949ff',
-    'pDC': '#f9c671ff',
-    'cDC': '#cea668ff',
-    'CD14 Mono': '#f79d51ff',
-    'CD16 Mono': '#e3874cff',
-    'HPSC': '#6e5046ff',
-    'Platelet':'#767476ff',
-    'other': '#afababff',
-}
-
-
 CELL_TYPE_COLORS = {
     'B cell':  tab10[0],
     'CD4 T cell': tab10[1], 

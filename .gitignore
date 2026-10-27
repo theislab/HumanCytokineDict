@@ -28,9 +28,13 @@ venv/
 # mypy
 .mypy_cache/
 
-# ignore plots and data
+# ignore plots, data, old code, and code review files
 plots/
 data/
+code_review/
+outputs/
+info/
+notebooks/figure_1_to_4/old_code/
 
 # Ignore individual file types
 *.ai
@@ -65,7 +69,7 @@ data/
 *.parquet
 
 # allow specific files
-!annotations/20250405_cytokine_info_with_functional_classification_LO.xlsx
+!annotations/cytokine_info.xlsx
 !annotations/donor_metadata.xlsx
 !annotations/ribosomal_genes.json
 !spatial_genes.csv
