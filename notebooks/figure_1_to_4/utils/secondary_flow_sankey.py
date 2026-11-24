@@ -483,7 +483,7 @@ def plot_secondary_flow_sankey(query_cyto, *, pair_table, producer_shares_by_pai
         cell_type_order=None, label_formatter=str, figsize_cm=None, font_size=None, title=None,
         compact=True, max_producers=4, max_recipients=3, layout=None,
         minimum_producer_share=.10, minimum_relay_share=.10, minimum_recipient_similarity=None,
-        minimum_recipient_share=None, stage_x=None):
+        minimum_recipient_share=None, stage_x=None, show_unknown_input_producers=False):
     """Show all candidate production/response paths, including unassigned fractions.
 
     Default layout='publication' keeps explicit route stages and prunes by per-candidate shares,
@@ -508,6 +508,9 @@ def plot_secondary_flow_sankey(query_cyto, *, pair_table, producer_shares_by_pai
     shares allocate cell types within D/I. Accepted overlap allocates the identified relay;
     its remainder stays unresolved. Recipient widths use normalized aligned similarity.
     These are evidence allocations, not molecular flux or estimates of causal mediation.
+    With show_unknown_input_producers=True, an unknown input receptor retains
+    the saved producer shares in the first producer stage, with unresolved gray
+    connections. This display convention does not classify producers as direct.
 
     Returns (figure, displayed_pairs, path_table). Full node metadata is in figure.layout.meta.
     """
@@ -629,6 +632,9 @@ def plot_secondary_flow_sankey(query_cyto, *, pair_table, producer_shares_by_pai
         product_id = node(f"product::{product}", f"{glyph} {'↑' if sign > 0 else '↓'} {fmt(product)}".strip(), 4,
             "#B94141" if sign > 0 else "#4169AD", f"{escape(style_label)}<br>{escape(str(row.confidence))}<br>Priority: {row.priority}")
         shares, classes = shares_and_classes(key)
+        show_unknown_producers = (
+            show_unknown_input_producers and not shares.empty and classes.eq("missing").all()
+        )
         d, i = row.direct_producer_share, row.indirect_producer_share
         attribution_known = pd.notna(d) and pd.notna(i) and np.isfinite(d + i) and min(d, i) >= 0 and np.isclose(d + i, 1)
         if attribution_known:
@@ -711,9 +717,16 @@ def plot_secondary_flow_sankey(query_cyto, *, pair_table, producer_shares_by_pai
                 edge(gap, gap_producer, unresolved_flow, row, "indirect attribution unavailable", amber)
                 edge(gap_producer, product_id, unresolved_flow, row, "unassigned indirect change", amber)
         if not attribution_known:
-            gap = node("unknown-attribution", "Producer / receptor<br>attribution unknown", 3, "#BB913E", "Saved direct/indirect shares are unavailable.")
-            edge(query_id, gap, 1., row, "producer attribution unresolved", amber)
-            edge(gap, product_id, 1., row, "observed change; producer unresolved", colors[sign])
+            if show_unknown_producers:
+                note = "Input receptor unknown; producer share retained without a direct/indirect assignment."
+                for cell, weight in normalize(shares).items():
+                    producer = node(f"unknown::{cell}", fmt(cell), 1, "#A0A0A0", note, cell)
+                    edge(query_id, producer, weight, row, "input-to-producer unresolved", "#A0A0A0", note)
+                    edge(producer, product_id, weight, row, "input-receptor-unknown attributed change", "#A0A0A0", note)
+            else:
+                gap = node("unknown-attribution", "Producer / receptor<br>attribution unknown", 3, "#BB913E", "Saved direct/indirect shares are unavailable.")
+                edge(query_id, gap, 1., row, "producer attribution unresolved", amber)
+                edge(gap, product_id, 1., row, "observed change; producer unresolved", colors[sign])
 
         # Compatible recipients are never silently dropped because their input receptor is high.
         support = support_by_pair.get(key)
@@ -745,6 +758,8 @@ def plot_secondary_flow_sankey(query_cyto, *, pair_table, producer_shares_by_pai
                 recipient_role=role[0])
             saturation = min(max(aligned_similarity / similarity_reference, 0), 1)
             response_color = f"hsl(174, {18 + 68 * saturation:.0f}%, {42 - 10 * saturation:.0f}%)"
+            if show_unknown_producers:
+                response_color = "#A0A0A0"
             edge(product_id, recipient, weight, row, "supported response similarity", response_color, role[1],
                  raw_similarity=aligned_similarity)
         if recipients.empty:

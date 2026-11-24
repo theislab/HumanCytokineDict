@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from typing import Mapping
+import numpy as np
 
 @dataclass(frozen=True, slots=True)
 class ReceptorExpression:
@@ -17,7 +18,7 @@ class SecondaryResponseConfig:
     similarity_min: float = 0.30
 
     # Priority calculation
-    magnitude_saturation: float = 2.0
+    magnitude_saturation: float = np.log2(3)
 
     lineage_by_cell = {
         "B cell": "B",

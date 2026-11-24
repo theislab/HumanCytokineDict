@@ -3,7 +3,8 @@ import pandas as pd
 from scipy.spatial.distance import euclidean
 from scipy.stats import mstats
 
-def _euclidean_distance(arr1, arr2, dropna=False, min_genes=None, print_min_gene_warning=False, length_norm=False, cell_type=None, cytokine=None):
+def _euclidean_distance(arr1, arr2, dropna=False, min_genes=None, print_min_gene_warning=False,
+    length_norm=False, cell_type=None, cytokine=None, exclude_top_n=0):
     if dropna:
         arr1 = arr1.dropna()
         arr2 = arr2.dropna()
@@ -12,9 +13,16 @@ def _euclidean_distance(arr1, arr2, dropna=False, min_genes=None, print_min_gene
     arr1 = arr1.loc[common_index]
     arr2 = arr2.loc[common_index]
     
+    if exclude_top_n < 0 or int(exclude_top_n) != exclude_top_n:
+        raise ValueError("exclude_top_n must be a non-negative integer")
+    if exclude_top_n > 0:
+        top_genes = (arr1 - arr2).abs().nlargest(int(exclude_top_n)).index
+        arr1 = arr1.drop(top_genes)
+        arr2 = arr2.drop(top_genes)
+    
     # compute distance
     if min_genes is not None:
-        if len(common_index) < min_genes:
+        if len(arr1) < min_genes:
             if print_min_gene_warning:
                 print(f"Not enough genes for {cell_type} {cytokine}")
             return np.nan
@@ -28,7 +36,7 @@ def _euclidean_distance(arr1, arr2, dropna=False, min_genes=None, print_min_gene
 def compute_response_euclidean_distance(
     df, cell_type, cytokine, control="PBS",
     dropna=False, min_genes=None, print_min_gene_warning=False,
-    length_norm=False):
+    length_norm=False, exclude_top_n=0):
     """
     Compute the Euclidean distance between the treatment and control cytokine response for a given cell type.
 
@@ -52,7 +60,8 @@ def compute_response_euclidean_distance(
         print_min_gene_warning=print_min_gene_warning,
         length_norm=length_norm,
         cell_type=cell_type,
-        cytokine=cytokine
+        cytokine=cytokine,
+        exclude_top_n=exclude_top_n
         )
         
     return distance

@@ -35,6 +35,7 @@ code_review/
 outputs/
 info/
 notebooks/figure_1_to_4/old_code/
+notebooks/database_analysis/
 
 # Ignore individual file types
 *.ai

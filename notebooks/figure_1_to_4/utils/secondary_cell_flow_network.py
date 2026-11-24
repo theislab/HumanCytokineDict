@@ -9,6 +9,7 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib.path import Path
 from matplotlib.patches import PathPatch, Rectangle
+from matplotlib.lines import Line2D
 import numpy as np
 import pandas as pd
 
@@ -29,6 +30,7 @@ _SIMPLIFIED_CAUSAL_CLASSES = {
 }
 _SIMPLIFIED_CAUSAL_LABEL = "unresolved/higher order"
 _EMPHASIZED_ROUTE_ALPHA = .86
+_DEFAULT_SIMILARITY_PANEL_WIDTH_CM = .60
 _PRODUCT_COLORS = ["#2166AC", "#1B9E77", "#B2182B", "#00A6D6", "#D660A8", "#238B45"]
 _CELL_ABBREVIATIONS = {
     "CD14 Mono": "CD14",
@@ -176,7 +178,7 @@ def _network_from_paths(
     title=None,
     show_legend=True,
     all_similarities=None,
-    similarity_panel_width_cm=.60,
+    similarity_panel_width_cm=_DEFAULT_SIMILARITY_PANEL_WIDTH_CM,
     simplified=False,
 ):
     """Render already-constructed flow evidence as a compact broadcast network."""
@@ -206,6 +208,7 @@ def _network_from_paths(
     paths["value"] = pd.to_numeric(paths.value, errors="coerce")
     paths["raw_similarity"] = pd.to_numeric(paths.raw_similarity, errors="coerce")
     products = pairs.secondary.astype(str).tolist()
+    release_flags = pairs.set_index('secondary')['route_release_constrained'].to_dict()
     direction_signs = {"secondary increased": 1., "secondary reduced": -1.}
     product_sign = {}
     for _, pair in pairs.iterrows():
@@ -216,13 +219,14 @@ def _network_from_paths(
     product_color = {product: _PRODUCT_COLORS[index % len(_PRODUCT_COLORS)]
                      for index, product in enumerate(products)}
 
-    production = paths.loc[
-        paths.target.isin([f"product::{product}" for product in products])
-    ].copy()
+    production = paths.loc[paths.target.isin([f"product::{product}" for product in products])].copy()
     production["product"] = production.secondary.astype(str)
     production["cell"] = production.source.map(_cell)
     production["route"] = production.source.map(_route)
     production["display_route"] = production["route"]
+    unknown_input_products = set(
+        production.loc[production["route"].eq("unknown"), "product"]
+    )
     if simplified:
         higher_order_products = set(
             pairs.loc[
@@ -230,17 +234,13 @@ def _network_from_paths(
             ].astype(str)
         )
         production.loc[
-            production["route"].ne("direct")
-            | production["product"].isin(higher_order_products),
+            ~production["route"].isin(["direct", "unknown"])
+            | (production["product"].isin(higher_order_products)
+               & production["route"].ne("unknown")),
             "display_route",
         ] = _SIMPLIFIED_CAUSAL_LABEL
-        # Route components that now have the same meaning must become one path,
-        # not multiple coincident connections. Aggregate before thresholding so
-        # the cutoff applies to the displayed, combined contribution.
         collapsed_rows = []
-        for _, group in production.groupby(
-            ["product", "cell", "display_route"], sort=False, dropna=False
-        ):
+        for _, group in production.groupby(["product", "cell", "display_route"], sort=False, dropna=False):
             row = group.iloc[0].copy()
             row["value"] = group["value"].sum(min_count=1)
             row["route_components"] = tuple(dict.fromkeys(group["route"].astype(str)))
@@ -357,21 +357,61 @@ def _network_from_paths(
         "legend.title_fontsize": small_font_size,
         "svg.fonttype": "none",
     })
-    # ``figsize_cm`` is the size of the complete figure.  The virtual width is
-    # used only to divide that fixed canvas between the network and the compact
-    # similarity panels.
-    virtual_width_cm = figsize_cm[0] + similarity_panel_width_cm * len(products)
-    network_fraction = figsize_cm[0] / virtual_width_cm
+    # Keep bars, label gutters, and the network in independent physical regions.
+    # Text widths come from the active renderer, so labels cannot run into bars
+    # when the network is resized or a different cell-type set is displayed.
     fig = plt.figure(figsize=(figsize_cm[0] / 2.54, figsize_cm[1] / 2.54))
     top = .88 if title is None else .82
     bottom = .24 if show_legend else .10
-    # Keep the requested network canvas width and append one compact similarity
-    # axis per selected cytokine.
-    ax = fig.add_axes([.10 * network_fraction, bottom, .88 * network_fraction, top - bottom])
+    fig.canvas.draw()
+    renderer = fig.canvas.get_renderer()
+    label_font = mpl.font_manager.FontProperties(family="Arial", size=font_size)
+
+    def label_width_cm(cells):
+        return max((renderer.get_text_width_height_descent(
+            _CELL_ABBREVIATIONS.get(cell, cell), label_font, ismath=False
+        )[0] * 2.54 / fig.dpi for cell in cells), default=0.)
+
+    figure_width_cm = float(figsize_cm[0])
+    panel_gap_cm = .08
+    node_label_gap_pt = 3.
+    node_label_gap_cm = node_label_gap_pt * 2.54 / 72
+    producer_label_width_cm = label_width_cm(producer_y) + node_label_gap_cm + .04
+    recipient_label_width_cm = label_width_cm(recipient_y) + node_label_gap_cm + .04
+    producer_panel_left_cm = font_size * 2.54 / 72 + .14
+    producer_panel_width_cm = .50
+    network_left_cm = (producer_panel_left_cm + producer_panel_width_cm
+                       + panel_gap_cm + producer_label_width_cm)
+    # Preserve the producer-to-recipient span of the original drawing. Add the
+    # independent bars and text around it instead of scaling the whole network
+    # to make room, or squeezing it into the leftover width.
+    network_width_cm = (
+        .88 * figure_width_cm ** 2
+        / (figure_width_cm + _DEFAULT_SIMILARITY_PANEL_WIDTH_CM * len(products))
+        * (.90 - .25)
+    )
+    network_right_cm = network_left_cm + network_width_cm
+    similarity_left_cm = network_right_cm + recipient_label_width_cm + panel_gap_cm
+    figure_width_cm = (similarity_left_cm + len(products) * similarity_panel_width_cm
+                       + (len(products) - 1) * panel_gap_cm + .06)
+    fig.set_size_inches(figure_width_cm / 2.54, figsize_cm[1] / 2.54, forward=True)
+
+    def panel_axes(left_cm, width_cm):
+        return fig.add_axes([left_cm / figure_width_cm, bottom,
+                             width_cm / figure_width_cm, top - bottom])
+
+    ax = panel_axes(network_left_cm, network_width_cm)
+    ax.set_gid("cell-flow-network")
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1)
     ax.axis("off")
-    x_producer, x_product, x_recipient = .25, .54, .90
+    producer_ax = panel_axes(producer_panel_left_cm, producer_panel_width_cm)
+    producer_ax.set_gid("producer-bars")
+    producer_ax.set_ylim(0, 1)
+    producer_ax.axis("off")
+    x_producer, x_product, x_recipient = 0., (.54 - .25) / (.90 - .25), 1.
+    # Map original x distances into the cropped network axis as well.
+    network_x_scale = 1 / (.90 - .25)
 
     production_source_order = {index: product_y[row["product"]] for index, row in production.iterrows()}
     production_target_order = {index: producer_y[row["cell"]] for index, row in production.iterrows()}
@@ -383,11 +423,11 @@ def _network_from_paths(
             if row["display_route"] in {"direct", "unresolved", _SIMPLIFIED_CAUSAL_LABEL}
             else path_alpha
         )
-        _curve(ax, x_producer + .012, producer_y[row["cell"]] + producer_ports[index],
-               x_product - .006, product_y[row["product"]] + product_in_ports[index],
+        _curve(ax, x_producer + .012 * network_x_scale, producer_y[row["cell"]] + producer_ports[index],
+               x_product - .006 * network_x_scale, product_y[row["product"]] + product_in_ports[index],
                color=_ROUTE_COLORS[row["display_route"]], width=path_width, alpha=route_alpha)
         if row["display_route"] == "relay" and pd.notna(row["intermediate"]):
-            ax.text(.39, (producer_y[row["cell"]] + product_y[row["product"]]) / 2,
+            ax.text((.39 - .25) / (.90 - .25), (producer_y[row["cell"]] + product_y[row["product"]]) / 2,
                     "via " + _plain_label(label_formatter(str(row["intermediate"]))), fontsize=small_font_size,
                     color=_ROUTE_COLORS["relay"], ha="center", va="center")
 
@@ -399,9 +439,10 @@ def _network_from_paths(
     product_out_ports = _port_offsets(response_for_ports, "product", response_source_order, port_spacing)
     recipient_ports = _port_offsets(response_for_ports, "cell", response_target_order, port_spacing)
     for index, row in response.sort_values(["product", "raw_similarity"], ascending=[True, False]).iterrows():
-        _curve(ax, x_product + .006, product_y[row["product"]] + product_out_ports[index],
-               x_recipient - .018, recipient_y[row["cell"]] + recipient_ports[index],
-               color=product_color[row["product"]], width=path_width, alpha=path_alpha)
+        _curve(ax, x_product + .006 * network_x_scale, product_y[row["product"]] + product_out_ports[index],
+               x_recipient - .018 * network_x_scale, recipient_y[row["cell"]] + recipient_ports[index],
+               color=(_ROUTE_COLORS["unknown"] if row["product"] in unknown_input_products
+                      else product_color[row["product"]]), width=path_width, alpha=path_alpha)
 
     # Compact quantitative summary for producers. Cytokines are shown as
     # adjacent bars rather than stacked segments and normalized to the largest
@@ -435,6 +476,7 @@ def _network_from_paths(
         if has_downregulation
         else producer_bar_right - producer_bar_zero
     )
+    producer_ax.set_xlim(producer_bar_left, producer_bar_right)
 
     # Build a local lane set for each cell from only the products it actually
     # produces. Heights shrink only when needed to remain inside the cell's
@@ -489,32 +531,33 @@ def _network_from_paths(
             ) + .008)
         else:
             bar_bottom, bar_top = .045, .955
-        ax.plot([producer_bar_zero, producer_bar_zero], [bar_bottom, bar_top],
+        producer_ax.plot([producer_bar_zero, producer_bar_zero], [bar_bottom, bar_top],
                 color="#404040", linewidth=bar_spine_linewidth,
                 solid_capstyle="butt", zorder=4)
-        ax.plot([producer_bar_left, producer_bar_right], [bar_bottom, bar_bottom],
+        producer_ax.plot([producer_bar_left, producer_bar_right], [bar_bottom, bar_bottom],
                 color="#404040", linewidth=bar_spine_linewidth,
                 solid_capstyle="butt", zorder=4)
         if has_downregulation:
-            ax.plot([producer_bar_left, producer_bar_left],
+            producer_ax.plot([producer_bar_left, producer_bar_left],
                     [bar_bottom, bar_bottom + .012], color="#404040",
                     linewidth=bar_spine_linewidth, solid_capstyle="butt", zorder=4)
-            ax.text(producer_bar_left, bar_bottom - .015, "−", ha="center", va="top",
+            producer_ax.text(producer_bar_left, bar_bottom - .015, "−", ha="center", va="top",
                     fontsize=small_font_size, color="#404040")
-        ax.text(producer_bar_right, bar_bottom - .015, "+", ha="center", va="top",
+        producer_ax.text(producer_bar_right, bar_bottom - .015, "+", ha="center", va="top",
                 fontsize=small_font_size, color="#404040")
 
     for spec in producer_bar_specs:
-        ax.add_patch(Rectangle((spec["x"], spec["y"]),
+        producer_ax.add_patch(Rectangle((spec["x"], spec["y"]),
                                spec["width"], spec["height"],
                                facecolor=product_color[spec["product"]], edgecolor="none",
                                zorder=3))
 
     for cell, y in producer_y.items():
         ax.scatter([x_producer], [y], s=13, marker="o", facecolor="#F8F8F8",
-                   edgecolor="#444444", linewidth=.55, zorder=5)
-        ax.text(x_producer - .018, y, _CELL_ABBREVIATIONS.get(cell, cell), ha="right", va="center",
-                fontsize=font_size, color="#252525")
+                   edgecolor="#444444", linewidth=.55, zorder=5, clip_on=False)
+        ax.annotate(_CELL_ABBREVIATIONS.get(cell, cell), (x_producer, y),
+                    xytext=(-node_label_gap_pt, 0), textcoords="offset points",
+                    ha="right", va="center", fontsize=font_size, color="#252525")
 
     for product in products:
         y = product_y[product]
@@ -527,10 +570,12 @@ def _network_from_paths(
         ax.plot([x_product, x_product], [y - hub_half_height, y + hub_half_height],
                 color=product_color[product], linewidth=4.2, solid_capstyle="round", zorder=6)
         product_label = _plain_label(label_formatter(product))
+        if release_flags[product]:
+            product_label += '*'
         ax.text(x_product, y + hub_half_height + .025, product_label, ha="center", va="bottom",
                 fontsize=font_size, color="#202020")
         if not has_response:
-            ax.text(x_product + .035, y, "no support", ha="left", va="center",
+            ax.text(x_product, y - hub_half_height - .025, "no support", ha="center", va="top",
                     fontsize=small_font_size, color="#777777")
 
     for cell, y in recipient_y.items():
@@ -542,26 +587,26 @@ def _network_from_paths(
         else:
             marker, face, edge = "D", "none", "#777777"
         ax.scatter([x_recipient], [y], s=14, marker=marker, facecolor=face,
-                   edgecolor=edge, linewidth=.75, zorder=5)
-        ax.text(x_recipient + .018, y, _CELL_ABBREVIATIONS.get(cell, cell), ha="left", va="center",
-                fontsize=font_size, color="#252525")
+                   edgecolor=edge, linewidth=.75, zorder=5, clip_on=False)
+        ax.annotate(_CELL_ABBREVIATIONS.get(cell, cell), (x_recipient, y),
+                    xytext=(node_label_gap_pt, 0), textcoords="offset points",
+                    ha="left", va="center", fontsize=font_size, color="#252525")
 
     query_label = _plain_label(label_formatter(str(query_cyto)))
-    ax.text(-.095, .5, f"{query_label} response producer", transform=ax.transAxes,
+    producer_ax.text(-producer_panel_left_cm / producer_panel_width_cm + .04, .5,
+            f"{query_label} response producer", transform=producer_ax.transAxes,
             rotation=90, ha="center", va="center", fontsize=font_size, clip_on=False)
-    ax.text(x_producer, 1.035, "producer", ha="center", va="bottom",
-            fontsize=font_size)
+    header_y = top + .035 * (top - bottom)
+    fig.text((network_left_cm - producer_label_width_cm / 2) / figure_width_cm,
+             header_y, "producer", ha="center", va="bottom", fontsize=font_size)
     ax.text(x_product, 1.035, "cytokine", ha="center", va="bottom", fontsize=font_size)
-    ax.text(x_recipient, 1.035, "recipient", ha="center", va="bottom", fontsize=font_size)
+    fig.text((network_right_cm + recipient_label_width_cm / 2) / figure_width_cm,
+             header_y, "recipient", ha="center", va="bottom", fontsize=font_size)
 
     # Independent panels show ordinary Pearson r rather than direction-aligned
     # values. Every axis has the same numerical span and physical width, so bar
     # length has one meaning throughout. One-sided panels shift that common span
     # to start or end at zero rather than reserving space on the unused side.
-    panel_left = (figsize_cm[0] + .02) / virtual_width_cm
-    panel_right = .99
-    panel_gap = .04 / virtual_width_cm
-    panel_width = (panel_right - panel_left - panel_gap * (len(products) - 1)) / len(products)
     similarity_values_by_product = {}
     required_similarity_ranges = {}
     for product in products:
@@ -584,12 +629,11 @@ def _network_from_paths(
     )
     similarity_ranges = {}
     for product_index, product in enumerate(products):
-        similarity_ax = fig.add_axes([
-            panel_left + product_index * (panel_width + panel_gap),
-            bottom,
-            panel_width,
-            top - bottom,
-        ])
+        similarity_ax = panel_axes(
+            similarity_left_cm + product_index * (similarity_panel_width_cm + panel_gap_cm),
+            similarity_panel_width_cm,
+        )
+        similarity_ax.set_gid(f"response-similarity-{product_index}")
         values = similarity_values_by_product[product]
         required_min, required_max = required_similarity_ranges[product]
         if required_max <= 0:
@@ -620,6 +664,8 @@ def _network_from_paths(
             similarity_ax.set_xlabel(f"Pearson r to {query_label}", fontsize=font_size, labelpad=1)
         similarity_ax.set_yticks([])
         product_label = _plain_label(label_formatter(product))
+        if release_flags[product]:
+            product_label += '*'
         if len(product_label) > 8 and "-" in product_label:
             product_label = product_label.replace("-", "-\n", 1)
         similarity_ax.set_title(
@@ -655,22 +701,71 @@ def _network_from_paths(
                 mpl.lines.Line2D([], [], color=_ROUTE_COLORS["unresolved"], lw=2, label="unresolved"),
             ]
         )
+        if unknown_input_products:
+            unknown_legend = mpl.lines.Line2D(
+                [], [], color=_ROUTE_COLORS["unknown"], lw=2, label="unresolved"
+            )
+            if unknown_input_products == set(products):
+                route_legend = [unknown_legend]
+            else:
+                route_legend.append(unknown_legend)
+        if unknown_input_products != set(products) or any(release_flags.values()):
+            route_legend.append(Line2D([0], [0], marker='$*$', linestyle='', color='#333333',
+                markersize=6, label='Release-constrained route'))
         receptor_legend = [
             mpl.lines.Line2D([], [], marker="o", markerfacecolor="none", markeredgecolor="#303030",
                              linestyle="none", markersize=3.2, label="yes"),
             mpl.lines.Line2D([], [], marker="s", markerfacecolor="#303030", markeredgecolor="#303030",
                              linestyle="none", markersize=3., label="no"),
         ]
+        if "unknown" in receptor_status_by_cell.values():
+            unknown_receptor_legend = mpl.lines.Line2D(
+                [], [], marker="D", markerfacecolor="none", markeredgecolor="#777777",
+                linestyle="none", markersize=3.2, label="unknown",
+            )
+            if set(receptor_status_by_cell.values()) == {"unknown"}:
+                receptor_legend = [unknown_receptor_legend]
+            else:
+                receptor_legend.append(unknown_receptor_legend)
         fig.legend(handles=route_legend, loc="lower center",
-                   bbox_to_anchor=(network_fraction * .28, .005),
+                   bbox_to_anchor=((producer_panel_left_cm + network_width_cm * .28) / figure_width_cm, .005),
                    frameon=False, ncol=len(route_legend), fontsize=small_font_size,
                    handlelength=1.15, handletextpad=.35, columnspacing=.65,
                    borderaxespad=0)
         fig.legend(handles=receptor_legend, title=f"{query_label} receptor",
-                   loc="lower center", bbox_to_anchor=(network_fraction * .72, .002),
+                   loc="lower center", bbox_to_anchor=(network_right_cm / figure_width_cm, .002),
                    frameon=False, ncol=2, fontsize=small_font_size,
                    title_fontsize=small_font_size, handlelength=1.,
                    handletextpad=.3, columnspacing=.65, borderaxespad=0)
+
+        # Stack legends below the axis labels. Extend the canvas downward and
+        # translate existing artists by the added space, preserving the physical
+        # size of every axis, font, marker, and bar.
+        fig.canvas.draw()
+        renderer = fig.canvas.get_renderer()
+        old_height_px = fig.bbox.height
+        footer_gap_px = .08 / 2.54 * fig.dpi
+        cursor_px = min(axis.get_tightbbox(renderer).y0 for axis in fig.axes)
+        for legend in reversed(fig.legends):
+            height_px = legend.get_window_extent(renderer).height
+            cursor_px -= footer_gap_px + height_px
+            legend.set_bbox_to_anchor((.5, cursor_px / old_height_px))
+        extra_px = max(0., footer_gap_px - cursor_px)
+        if extra_px:
+            axes_positions = [axis.get_position().frozen() for axis in fig.axes]
+            text_positions = [text.get_position() for text in fig.texts]
+            legend_positions = [legend.get_bbox_to_anchor().transformed(
+                fig.transFigure.inverted()).y0 for legend in fig.legends]
+            new_height_px = old_height_px + extra_px
+            fig.set_size_inches(fig.get_figwidth(), new_height_px / fig.dpi, forward=True)
+            for axis, position in zip(fig.axes, axes_positions):
+                axis.set_position([position.x0,
+                                   (position.y0 * old_height_px + extra_px) / new_height_px,
+                                   position.width, position.height * old_height_px / new_height_px])
+            for text, (x, y) in zip(fig.texts, text_positions):
+                text.set_position((x, (y * old_height_px + extra_px) / new_height_px))
+            for legend, y in zip(fig.legends, legend_positions):
+                legend.set_bbox_to_anchor((.5, (y * old_height_px + extra_px) / new_height_px))
 
     displayed = pd.concat([
         production.assign(
@@ -711,6 +806,15 @@ def _network_from_paths(
     displayed.attrs["recipient_group_gap_slots"] = .55
     displayed.attrs["emphasized_route_alpha"] = _EMPHASIZED_ROUTE_ALPHA
     displayed.attrs["simplified"] = simplified
+    displayed.attrs["horizontal_layout_cm"] = {
+        "producer_bars": (producer_panel_left_cm, producer_panel_width_cm),
+        "producer_labels": (network_left_cm - producer_label_width_cm, producer_label_width_cm),
+        "network": (network_left_cm, network_width_cm),
+        "recipient_labels": (network_right_cm, recipient_label_width_cm),
+        "similarity_start": similarity_left_cm,
+        "similarity_panel_width": similarity_panel_width_cm,
+        "panel_gap": panel_gap_cm,
+    }
     return fig, pairs, displayed
 
 
@@ -745,7 +849,7 @@ def plot_secondary_cell_flow_network(
     show_bar_spines=True,
     title=None,
     show_legend=True,
-    similarity_panel_width_cm=.60,
+    similarity_panel_width_cm=_DEFAULT_SIMILARITY_PANEL_WIDTH_CM,
     simplified=False,
 ):
     """Plot producer-cell → cytokine → recipient-cell evidence as a network.
@@ -759,8 +863,12 @@ def plot_secondary_cell_flow_network(
     Similarities are shown only where the corresponding secondary receptor in
     ``pair_details_by_pair`` reaches ``config.receptor_min``. Recipient nodes
     without any displayed cytokine connection are omitted.
-    ``figsize_cm`` sizes the complete figure. ``similarity_panel_width_cm`` sets
-    the relative space assigned to each similarity panel within that fixed canvas.
+    ``figsize_cm`` sets the nominal drawing size. The canvas expands to fit
+    independent bar panels, measured cell-label gutters, and stacked legends,
+    preserving the network's physical span and height at that nominal size.
+    ``similarity_panel_width_cm`` sets each similarity panel's physical width.
+    Producer bars use a separate axis; measured cell-label gutters separate
+    both sets of bars from the network.
     ``left_bar_height`` and ``right_bar_height`` are in their respective axes'
     y-coordinate units. ``font_size`` sets the primary typography and must be at
     least 5.5 pt; compact annotations use at most 0.5 pt less, with the same
@@ -771,6 +879,10 @@ def plot_secondary_cell_flow_network(
     With ``simplified=True``, shared secondary/tertiary, plausible tertiary,
     and unresolved tertiary pairs are displayed as one ``unresolved/higher
     order`` route category.
+    When input-receptor coverage is unknown (e.g. IL-32-beta), saved producer
+    shares are shown in the first producer column without assigning direct
+    targets. All connections are gray and recipient receptor status is unknown;
+    secondary-receptor eligibility and response-similarity cutoffs still apply.
     """
     if not np.isfinite(font_size) or font_size < 5.5:
         raise ValueError("font_size must be at least 5.5 pt.")
@@ -795,6 +907,7 @@ def plot_secondary_cell_flow_network(
         label_formatter=label_formatter,
         layout="expanded",
         compact=False,
+        show_unknown_input_producers=True,
         figsize_cm=figsize_cm,
         font_size=font_size,
         title=title,

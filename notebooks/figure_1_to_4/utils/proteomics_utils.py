@@ -6,13 +6,13 @@ import pandas as pd
 
 def determine_censored_range(
     df,
+    buffer_val,
+    min_interval_width,
+    minimum_points,
+    boundary_fraction_threshold,
     x_col="log10_sim_supernatant",
     y_col="log10_raw_conc",
-    buffer_val=0.1,
     numerical_tol=1e-5,
-    min_interval_width=np.log10(2),
-    minimum_points=5,
-    boundary_fraction_threshold=0.8,
 ):
     """
     Identify x-intervals dominated by protein censoring.
@@ -144,64 +144,37 @@ def fit_with_floating_start(x, y, max_float=1):
 
     return slope, intercept, start
 
-def run_fit(df, floating_start=False):
-    protein = df['protein'].iloc[0]
-    mask_uncensored = ~df['mostly_censored']
-    df_uncensored = df[mask_uncensored].copy()
+def run_fit(df):
+    mask_uncensored = ~df["mostly_censored"]
+    usable = df.loc[mask_uncensored]
 
-    if len(df_uncensored) > 0:
-        x = df_uncensored['log10_sim_supernatant']
-        y = df_uncensored['log10_raw_conc']
-        identity = df_uncensored['row_identity']
+    x = usable["log10_sim_supernatant"]
+    y = usable["log10_raw_conc"]
+    identity = usable["row_identity"]
 
-        x_min = x.min()
-        x_max = x.max()
+    n = len(usable)
+    x_min = x.min()
+    x_max = x.max()
+    effective_range = x_max - x_min
 
-        if len(df_uncensored) > 10 and (x_max - x_min) >= np.log10(5):
-            if floating_start:
-                slope, intercept, start = fit_with_floating_start(x.values, y.values)
-            else:
-                slope, intercept = np.polyfit(x.values, y.values, 1)
-                start = x.min()
-            mask_for_fit = x >= start
-            x = x[mask_for_fit]
-            y = y[mask_for_fit]
-            identity = identity[mask_for_fit]
-            effective_fitted_points = len(x)
-            effective_range = x.max() - x.min()
+
+    mask_for_fit = pd.Series(True, index=usable.index)
+    slope = np.nan
+    intercept = np.nan
+    corr = np.nan
+    if n >= 2 and effective_range > 0:
+        slope, intercept = np.polyfit(x.to_numpy(), y.to_numpy(), 1)
+
+        if y.max() > y.min():
             corr = stats.pearsonr(x, y).statistic
-        else:
-            effective_fitted_points = 0
-            effective_range = 0
-            corr = np.nan
-            slope = np.nan
-            intercept = np.nan
-            start = np.nan
-            mask_for_fit = np.nan
-            x = np.nan
-            y = np.nan
-            identity = np.nan
-    else:
-        effective_fitted_points = 0
-        effective_range = 0
-        corr = np.nan
-        intercept = np.nan
-        slope = np.nan
-        start = np.nan
-        x_min = np.nan
-        x_max = np.nan
-        mask_for_fit = np.nan
-        x = np.nan
-        y = np.nan
-        identity = np.nan
 
     result = {
-        "protein": protein,
+        "protein": df["protein"].iloc[0] if len(df) else None,
         "corr": corr,
         "slope": slope,
         "intercept": intercept,
-        "start": start,
-        "fitted_points": effective_fitted_points,
+        "start": x_min,
+        "fitted_points": n,
         "effective_range": effective_range,
         "x_min": x_min,
         "x_max": x_max,
@@ -224,13 +197,10 @@ AGGREGATORS = {
     "sum": aggregate_sum,
 }
 
-def calculate_cell_state(
-    expression: pd.DataFrame,
-    marker_genes: list[str],
-) -> pd.Series:
+def calculate_cell_state(expression: pd.DataFrame, marker_genes: list[str],) -> pd.Series:
     """Return one zero-centred state score per (cell type, cytokine, donor).
 
-    Each marker is log-transformed and z-scored *within cell type* across all treatment/donor pseudobulks.
+    Each marker is log-transformed and z-scored within cell type across all treatment/donor pseudobulks.
     """
     genes = [gene for gene in marker_genes if gene in expression.index]
     if len(genes) < 3 and len(genes) < len(marker_genes):
@@ -247,19 +217,11 @@ def calculate_cell_state(
         result.loc[columns] = z.mean(axis=0)
     return result.fillna(0)
 
-def state_gain_for_protein(
-    production_index: pd.MultiIndex,
-    cell_states: pd.Series,
-    state_sensitivity: pd.Series,
-    max_abs_log_gain: float = 3.0,
-) -> pd.Series:
+def state_gain_for_protein( production_index: pd.MultiIndex, cell_states: pd.Series, state_sensitivity: pd.Series, max_abs_log_gain: float = 3.0) -> pd.Series:
     """
     Calculate exp(beta[protein, cell] * state[cell, sample]).
     """
-    beta = pd.Series(
-        production_index.get_level_values("cell_type"),
-        index=production_index,
-    ).map(state_sensitivity).fillna(0.0)
+    beta = pd.Series(production_index.get_level_values("cell_type"), index=production_index).map(state_sensitivity).fillna(0.0)
 
     state = cell_states.reindex(production_index)
     if state.isna().any():
@@ -290,15 +252,10 @@ def calculate_supernatant(
         timepoint0_offset = timepoint0_expression.reindex(timepoint0_lookup).fillna(0)
         timepoint0_offset.index = per_celltype_production.index
         per_celltype_production = per_celltype_production + timepoint0_weight * timepoint0_offset
-    # OLD
-    # subunit_values_by_celltype = count_df_norm_needed.loc[genes]
-    # per_celltype_production = aggregator(subunit_values_by_celltype)
 
     # apply state sensitivity
     if cell_states is not None:
-        state_gain = state_gain_for_protein(
-            per_celltype_production.index, cell_states, state_sensitivity
-        )
+        state_gain = state_gain_for_protein(per_celltype_production.index, cell_states, state_sensitivity)
     else:
         state_gain = 1
     per_celltype_production = per_celltype_production * state_gain
@@ -314,17 +271,12 @@ def calculate_supernatant(
         ]
     
     # calculate simulated supernatant
-    simulated = weighted_per_celltype_production.groupby(
-        level=["cytokine", "donor"],
-        observed=True,
-    ).sum()
-    tmp = simulated.rename("sim_supernatant").reset_index().rename(
-        columns={"cytokine": "treatment"}
-        )
-    tmp["protein"] = row["protein"]
-    tmp["target_genes"] = row["target_genes"]
-    tmp["aggregation"] = subunit_aggregation
-    tmp["n_subunits"] = len(genes)
+    simulated = weighted_per_celltype_production.groupby(level=["cytokine", "donor"], observed=True,).sum()
+    simulated = simulated.rename("sim_supernatant").reset_index().rename(columns={"cytokine": "treatment"})
+    simulated["protein"] = row["protein"]
+    simulated["target_genes"] = row["target_genes"]
+    simulated["aggregation"] = subunit_aggregation
+    simulated["n_subunits"] = len(genes)
     
     # calculate per cell type contributions
     contrib = weighted_per_celltype_production.rename("cell_type_contribution")
@@ -335,4 +287,4 @@ def calculate_supernatant(
     contrib["aggregation"] = subunit_aggregation
     contrib["n_subunits"] = len(genes)
 
-    return tmp, contrib
+    return simulated, contrib

@@ -13,7 +13,6 @@ CELL_TYPE_COLORS = {
     'NKT': 'red',
     'NK CD56hi': 'pink',
     'NK CD56low': 'saddlebrown',
-    #'pDC': 'deeppink',
     'cDC': 'lime',
     'CD14 Mono': 'purple',
     'CD16 Mono': tab10[16],
@@ -32,11 +31,14 @@ CELL_TYPE_COLORS_ALT = {
     'NKT': 'red',
     'NK CD56hi': 'pink',
     'NK CD56low': 'saddlebrown',
-#    'pDC': 'deeppink',
     'cDC': 'lime',
     'CD14 Mono': 'purple',
     'CD16 Mono': tab10[16],
     'HSPC': 'dimgray',
+    'pDC': 'deeppink',
+#     'ILC': 
+#     'Granulocyte': 'yello'
+#     'Plasmablast'
 }
 
 ALL_CELL_TYPES = list(CELL_TYPE_COLORS.keys())
